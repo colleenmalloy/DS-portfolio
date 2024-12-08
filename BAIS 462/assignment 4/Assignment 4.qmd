@@ -1,0 +1,270 @@
+---
+title: "Assignment 4"
+format: html
+editor: visual
+author: Colleen Malloy
+warning: FALSE          # FALSE: Code chunk sarnings are hidden by default.
+message: FALSE          # FALSE: Code chunk messages are hidden by default.
+echo: FALSE
+---
+
+## Introduction
+
+This document assesses data from the Hamilton County Auditor, which includes every residential property sale in the area from January 1, 2018 to December 31, 2021. Our hope is to find any trends of increased residential property prices due to anything pandemic related.
+
+......
+
+## Load Packages
+
+Load all package libraries:
+
+```{r}
+#| echo: false
+library(ggplot2)
+library(readr)
+library(dplyr)
+library(lubridate)
+library(stringr)
+```
+
+## Load the Data
+
+```{r}
+#| echo: false
+#housing <- read.csv("http://asayanalytics.com/xu_prop-csv")
+housing <- read_csv("xavier_property.csv")
+
+```
+
+## Clean Data
+
+```{r}
+housing$value[housing$value < 11] <- NA
+
+housing$date_sold <- make_date(housing$year, housing$month, housing$day)
+
+housing$year <- NULL
+housing$month <- NULL
+housing$day <- NULL
+
+housing$property_type [housing$use %in% c(401, 402, 403)] <- "Multifamily Dwelling"
+housing$property_type [housing$use == 510] <- "Single-family Dwelling"
+housing$property_type [housing$use == 520] <- "Two-family Dwelling"
+housing$property_type [housing$use == 530] <- "Three-family Dwelling"
+housing$property_type [housing$use == 550] <- "Single condominium unit"
+housing$property_type [housing$use == 555] <- "Single landominium unit"
+
+mean <- mean(housing$value, na.rm = TRUE)
+std_dev <- sd(housing$value, na.rm = TRUE)
+
+categorize_value <- function(value, mean, std) {
+  if (is.na(value)) {
+    return('missing')
+  } else if (value < mean - std) {
+    return('less than 1 std below mean')
+  } else if (value > mean + std) {
+    return('more than 1 std above mean')
+  } else {
+    return('within 1 std of mean')
+  }
+}
+
+category <- sapply(housing$value, categorize_value, mean = mean, std = std_dev)
+```
+
+## Visualization
+
+### 3.1 Distribution of Single Family Dwelling Home Sizes (SQFT)
+
+```{r}
+housing1 <- housing %>% 
+  select(property_type, finished_sqft) %>% 
+  mutate(property_type == "Single-family Dwelling")
+
+ggplot(housing1, aes(x = finished_sqft))+
+  geom_histogram(bins = 50)+
+  labs(title = "Distribution of Single-Family Dwelling Home Sizes in Square Feet", x = "Square Feet", y = "Frequency")+
+  theme_minimal()
+```
+
+The distribution seems skewed right. If the outliers were taken out however, I think SQFT would be more likely normally distributed.
+
+### 3.2 Ratio of Full Bathrooms to Bedrooms for each Neighborhood
+
+```{r}
+housing2 <- housing %>% 
+  select(neighborhood, bedrooms, full_bath)
+  
+housing2$ratio <- housing2$full_bath / housing2$bedrooms
+
+result <- housing2 %>% 
+  group_by(neighborhood) %>% 
+  summarize(avg_ratio = mean(ratio))
+
+ggplot(result, aes(x = neighborhood, y = avg_ratio, fill = neighborhood)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Average Ratio of Full Bathrooms to Bedrooms by Neighborhood",
+       x = "Neighborhood",
+       y = "Average Ratio") +
+  theme_minimal()
+```
+
+This result could be that some areas are wealthier so those homes contain more bathrooms. Also, some homes are older so they do not have as many bathrooms as modern built homes.
+
+### 3.3 Total Value of Home Transactions Processed in Each Month For Each Neighborhood
+
+```{r}
+housing$year_month <- format(housing$date_sold, "%Y-%m")
+
+result1 <- housing %>% 
+  group_by(neighborhood, year_month) %>% 
+  summarize(total_value = sum(value))
+
+ggplot(result1, aes(x = year_month, y = total_value, color = neighborhood, group = neighborhood))+
+  #geom_line()+
+  geom_point(size = 3)+
+  labs(title = "Total Value of Home Transactions by Month and Neighborhood", x = "Month", y = "Total Transaction Value")+
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+        axis.title.x = element_text(size = 12),
+        axis.title.y = element_text(size = 12),
+        plot.title = element_text(size = 16))
+
+
+
+#facet wrap histogram for each neighborhood
+# 
+# ggplot(result1, aes(x = year_month, y = total_value))+
+#   geom_bar(stat = "identity")+
+#   theme_minimal()+
+#   facet_wrap(~ neighborhood)
+```
+
+There is not much of a trend... There are a lot more transactions in 2018, not much in the middle of 2020 due to the pandemic. The higher transactions seem to take place in the summer months, while other average transactions occur in the beginning of the year.
+
+## Directed Analysis
+
+### 4.1 Gifted a Residential Property and intend to sell it for highest price
+
+#### Location:
+
+```{r}
+
+
+average_value <- housing %>% 
+  select(value, neighborhood) %>% 
+  group_by(neighborhood) %>% 
+  summarize(avg_value = mean(value, na.rm = TRUE))
+
+print(average_value)
+```
+
+From this table, I would choose to sell this property in Mount Adams because this is the neighborhood with the highest average transaction value.
+
+#### Features:
+
+```{r}
+averages <- housing %>% 
+  group_by(neighborhood) %>% 
+  summarize(
+    avg_value = mean(value, na.rm = TRUE),
+    avg_bed = mean(bedrooms, na.rm = TRUE),
+    avg_full_bath = mean(full_bath, na.rm = TRUE),
+    avg_size = mean(finished_sqft, na.rm = TRUE))
+
+ggplot(averages, (aes(x = avg_value, y = avg_bed)))+
+  geom_point()
+
+ggplot(averages, (aes(x = avg_value, y = avg_full_bath)))+
+  geom_point()
+
+ggplot(averages, (aes(x = avg_value, y = avg_size)))+
+  geom_point()
+
+print(averages)
+```
+
+I don't think the numbers of bedrooms or full bathrooms have much of an effect on the value of a house, but from these visuals I would select 3 bedrooms, 2 full bathrooms, and around 2300 square feet.
+
+#### Year:
+
+```{r}
+ggplot(housing, aes(x = yr_blt, y = value))+
+  geom_point()
+```
+
+The highest selling houses were built around the year 1925. There is an increasing trend so I would want my house built at least after 1900, preferably around 1925 or 2010s.
+
+#### Time of year/Day:
+
+```{r}
+ggplot(housing, aes(x = year_month, y = value))+
+  geom_point(size = 2)+
+  labs(title = "Value of Home Transactions by Month", x = "Month", y = "Transaction Value")+
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+        axis.title.x = element_text(size = 12),
+        axis.title.y = element_text(size = 12),
+        plot.title = element_text(size = 16))
+```
+
+I would sell my house during the summer. According to this visual, there are spikes in the transaction value during the summer months. This is when there is nice weather so people might look at houses more during this time and because of the increase in demand, the prices go higher.
+
+## Self-Directed Analysis
+
+```{r}
+corporations <- housing %>% 
+  filter(str_detect(purchaser, "LLC|CORP| INC"))
+
+ggplot(corporations, aes(x = year_month, y = value))+
+  geom_point(size = 2)+
+  labs(title = "Value of Home Transactions by Month (Corporations)", x = "Month", y = "Transaction Value")+
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+        axis.title.x = element_text(size = 12),
+        axis.title.y = element_text(size = 12),
+        plot.title = element_text(size = 16))
+
+no_corporations <- housing %>% 
+  filter(!str_detect(purchaser, "LLC|CORP| INC"))
+
+ggplot(no_corporations, aes(x = year_month, y = value))+
+  geom_point(size = 2)+
+  labs(title = "Value of Home Transactions by Month (Corporations)", x = "Month", y = "Transaction Value")+
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+        axis.title.x = element_text(size = 12),
+        axis.title.y = element_text(size = 12),
+        plot.title = element_text(size = 16))
+
+# These two graphs overlapping:
+ggplot() +
+  geom_point(data = corporations, aes(x = year_month, y = value), color = 'blue', size = 3) +
+  geom_point(data = no_corporations, aes(x = year_month, y = value), color = 'red', size = 2) +
+  labs(title = "Value of Home Transactions by Year-Month", x = "Year-Month", y = "Transaction Value") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+        axis.title.x = element_text(size = 12),
+        axis.title.y = element_text(size = 12),
+        plot.title = element_text(size = 16))
+
+ggplot(corporations, aes(x = year_month))+
+         geom_histogram(stat="count")+
+  labs(title = "Count of Transactions by Year_Month (Corporations)", x = "Year_Month", y = "Count")+
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 10))
+
+ggplot(no_corporations, aes(x = year_month))+
+         geom_histogram(stat="count")+
+  labs(title = "Count of Transactions by Year_Month (Not Corporations)", x = "Year_Month", y = "Count")+
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 10))
+
+
+
+
+```
+
+I would say this claim is incorrect, or at least the methods I used do not support the claim that residential properties are increasingly becoming owned by corporations rather than by individuals and that this phenomena is contributing to the increased price of housing in the area. There is an increase in properties being owned by corporations as seen in the fourth visual in this section, however, the amount of properties owned by people and families also increased. The values for both corporations and families do not seem to have a trend. I do not think they have increased over 2018 to 2022.
+
+There is definitely a spike in 2021 for both corporations and those families/people buying homes. This follows the trend that was occurring before the pandemic occurred in 2020.
